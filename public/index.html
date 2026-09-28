@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Harbor</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand">Harbor</div>
+      <p class="tag">Local studio</p>
+      <nav>
+        <button type="button" data-view="generate">Generate</button>
+        <button type="button" data-view="presets">Presets</button>
+        <button type="button" data-view="characters">Characters</button>
+        <button type="button" data-view="stories">Stories</button>
+        <button type="button" data-view="gallery">Gallery</button>
+      </nav>
+      <p class="machine" id="machine">This Mac</p>
+    </aside>
+    <main id="main"></main>
+  </div>
+  <div id="wizard" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>

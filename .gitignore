@@ -1,0 +1,6 @@
+engine/.venv/
+engine/FastVideo/
+models/
+data/
+node_modules/
+.railway/
