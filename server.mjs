@@ -2,7 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -261,8 +261,7 @@ function presetView() {
         name: "Coast Video",
         media: "video",
         status: video,
-        blurb:
-          "Local cinematic clips, about 5 seconds at 480p. This is the video preset that fits this Mac.",
+        blurb: "1080p clips, 10 or 15 seconds, made on this Mac.",
         size: "12.5 GB",
       },
       {
@@ -270,7 +269,7 @@ function presetView() {
         name: "Still Image",
         media: "image",
         status: image,
-        blurb: "Local stills in a few seconds. Used for frames and for trying a character in a scene.",
+        blurb: "1080p stills made on this Mac.",
         size: "about 2 GB",
       },
     ],
@@ -363,15 +362,41 @@ function characterLock(character, prompt) {
   return `${lock}\n${prompt}`.trim();
 }
 
-function videoSize(aspect) {
-  if (aspect === "9:16") return { height: 832, width: 480 };
-  return { height: 480, width: 832 };
+function framePlan(seconds) {
+  const long = Number(seconds) >= 15;
+  return long
+    ? { frames: 241, fastFactor: 3, label: "15" }
+    : { frames: 161, fastFactor: 2, label: "10" };
 }
 
-function imageSize(aspect) {
-  if (aspect === "9:16" || aspect === "2:3") return { width: 512, height: 768 };
-  if (aspect === "1:1") return { width: 512, height: 512 };
-  return { width: 768, height: 512 };
+function drawSize(media, aspect) {
+  const portrait = aspect === "9:16" || aspect === "2:3";
+  const square = aspect === "1:1";
+  if (media === "video") {
+    return portrait ? { width: 480, height: 832 } : { width: 832, height: 480 };
+  }
+  if (square) return { width: 1024, height: 1024 };
+  if (portrait) return { width: 576, height: 1024 };
+  return { width: 1024, height: 576 };
+}
+
+function deliverSize(media, aspect) {
+  const portrait = aspect === "9:16" || aspect === "2:3";
+  const square = media === "image" && aspect === "1:1";
+  if (square) return { width: 1080, height: 1080 };
+  if (portrait) return { width: 1080, height: 1920 };
+  return { width: 1920, height: 1080 };
+}
+
+function upscaleFile(source, dest, width, height) {
+  const video = source.endsWith(".mp4");
+  const args = ["-y", "-i", source, "-vf", `scale=${width}:${height}:flags=lanczos,unsharp=5:5:0.35`];
+  if (video) args.push("-c:v", "libx264", "-crf", "16", "-preset", "medium", "-pix_fmt", "yuv420p", "-movflags", "+faststart");
+  args.push(dest);
+  const result = spawnSync("ffmpeg", args, { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error((result.stderr || "Could not scale the picture to 1080p.").slice(-500));
+  }
 }
 
 function finishJob(code) {
@@ -453,13 +478,15 @@ function startJob(input) {
     : "";
   const id = crypto.randomBytes(8).toString("hex");
   const aspect = String(input.aspect || "16:9");
-  const pace = input.pace === "fine" || input.pace === "standard" ? input.pace : "quick";
+  const seconds = Number(input.seconds) >= 15 ? 15 : 10;
   const seed = Number.isFinite(Number(input.seed)) && String(input.seed).trim() !== ""
     ? Number(input.seed)
     : crypto.randomInt(1, 2_000_000_000);
   const ext = media === "video" ? "mp4" : "png";
   const file = `${id}.${ext}`;
   const out = path.join(DATA, "gallery", file);
+  const native = path.join(DATA, "gallery", `${id}-draw.${ext}`);
+  const deliver = deliverSize(media, aspect);
   fs.mkdirSync(path.dirname(out), { recursive: true });
 
   const env = {
@@ -473,39 +500,39 @@ function startJob(input) {
 
   let args;
   if (media === "video") {
-    const { height, width } = videoSize(aspect);
-    const frames = Number(input.seconds) <= 3 ? 49 : 81;
+    const draw = drawSize("video", aspect);
+    const plan = framePlan(seconds);
     args = [
       VIDEO_SCRIPT,
       "--model-root", VIDEO_ROOT,
       "--mlx-checkpoint", VIDEO_ROOT,
       "--prompt", finalPrompt,
-      "--output-path", out,
-      "--height", String(height),
-      "--width", String(width),
-      "--num-frames", String(frames),
+      "--output-path", native,
+      "--height", String(draw.height),
+      "--width", String(draw.width),
+      "--num-frames", String(plan.frames),
       "--fps", "16",
       "--seed", String(seed),
-      "--mlx-memory-limit-gib", "5",
+      "--mlx-memory-limit-gib", "8",
       "--torch-device", "cpu",
       "--prompt-encode-mode", "subprocess",
       "--text-encoder-dtype", "fp16",
       "--torch-mps-high-watermark-ratio", "0.0",
       "--metrics-json", path.join(DATA, "gallery", `${id}.json`),
+      "--fast",
+      "--fast-factor", String(plan.fastFactor),
     ];
-    if (pace === "quick") args.push("--fast", "--fast-spatial");
-    else if (pace === "standard") args.push("--fast");
   } else {
-    const { width, height } = imageSize(aspect);
+    const draw = drawSize("image", aspect);
     args = [
       path.join(ROOT, "engine/image_gen.py"),
       "--model", IMAGE_ROOT,
       "--prompt", finalPrompt,
       "--negative", String(input.negative || "blurry, watermark, text, extra fingers"),
-      "--output", out,
-      "--width", String(width),
-      "--height", String(height),
-      "--steps", "2",
+      "--output", native,
+      "--width", String(draw.width),
+      "--height", String(draw.height),
+      "--steps", "4",
       "--seed", String(seed),
     ];
     if (portrait && fs.existsSync(portrait) && input.usePortrait !== false) {
@@ -522,9 +549,9 @@ function startJob(input) {
         "--model", IMAGE_ROOT,
         "--prompt", finalPrompt,
         "--negative", "blurry, watermark, text, extra fingers",
-        "--output", path.join(DATA, "gallery", stillFile),
-        "--width", String(imageSize(aspect).width),
-        "--height", String(imageSize(aspect).height),
+        "--output", path.join(DATA, "gallery", `${id}-still-draw.png`),
+        "--width", String(drawSize("image", aspect).width),
+        "--height", String(drawSize("image", aspect).height),
         "--steps", "4",
         "--seed", String(seed),
         "--init-image", portrait,
@@ -540,7 +567,9 @@ function startJob(input) {
     preset: media === "video" ? "coast-video" : "still-image",
     characterId: character?.id || "",
     aspect,
-    pace,
+    seconds,
+    native,
+    deliver,
     seed,
     file,
     storyId: input.storyId || "",
@@ -570,13 +599,38 @@ function startJob(input) {
     });
     child.on("exit", (code) => onExit(code ?? 1));
   }
+  function publish(code) {
+    if (code === 0) {
+      try {
+        upscaleFile(native, out, deliver.width, deliver.height);
+        fs.rmSync(native, { force: true });
+        job.log += `\nScaled to ${deliver.width}×${deliver.height}.\n`;
+      } catch (err) {
+        job.error = err.message;
+        finishJob(1);
+        return;
+      }
+    }
+    finishJob(code);
+  }
   if (stillArgs) {
     launch(stillArgs, (code) => {
-      if (code !== 0) job.log += "Scene still did not finish. Starting the clip.\n";
-      launch(args, (videoCode) => finishJob(videoCode));
+      if (code === 0) {
+        try {
+          const drawn = path.join(DATA, "gallery", `${id}-still-draw.png`);
+          const size = deliverSize("image", aspect);
+          upscaleFile(drawn, path.join(DATA, "gallery", stillFile), size.width, size.height);
+          fs.rmSync(drawn, { force: true });
+        } catch (err) {
+          job.log += `Scene still could not be scaled. ${err.message}\n`;
+        }
+      } else {
+        job.log += "Scene still did not finish. Starting the clip.\n";
+      }
+      launch(args, publish);
     });
   } else {
-    launch(args, (code) => finishJob(code));
+    launch(args, publish);
   }
   state.rev += 1;
   saveState(state);
@@ -751,8 +805,7 @@ function maybeProve() {
         media: "video",
         prompt: "A young girl with a blue umbrella walks a stone path through a quiet coastal village at sunrise, hand-painted, gentle camera, no text",
         aspect: "16:9",
-        seconds: 3,
-        pace: "quick",
+        seconds: 10,
         proof: "video",
       });
     }

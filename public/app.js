@@ -50,8 +50,7 @@ let form = {
   prompt: (() => { try { return localStorage.getItem("harbor-prompt") || ""; } catch { return ""; } })(),
   characterId: "",
   aspect: "16:9",
-  seconds: 5,
-  pace: "quick",
+  seconds: 10,
   negative: "blurry, watermark, text, extra fingers",
   seed: "",
   usePortrait: true,
@@ -230,7 +229,7 @@ function renderGenerate() {
     <h1>Generate</h1>
     <p class="lead">${state.install.localEngine === false
       ? "This is the hosted studio. Building prompts, characters, and stories works here. Image and video generation run on the Mac, where the models are installed."
-      : "Pick image or video, build a full prompt from a simple idea, then run it on this Mac. No credits."}</p>
+      : "Image or video, at 1080p. Videos are 10 or 15 seconds. Everything runs on this Mac."}</p>
     <div class="generate">
       <section class="card">
         <div class="choice" id="media">
@@ -257,25 +256,17 @@ function renderGenerate() {
           <div>
             <label for="aspect">Shape</label>
             <select id="aspect">
-              <option value="16:9" ${form.aspect === "16:9" ? "selected" : ""}>Landscape 16:9</option>
-              <option value="9:16" ${form.aspect === "9:16" ? "selected" : ""}>Portrait 9:16</option>
-              ${form.media === "image" ? `<option value="1:1" ${form.aspect === "1:1" ? "selected" : ""}>Square</option>` : ""}
+              <option value="16:9" ${form.aspect === "16:9" ? "selected" : ""}>1080p landscape</option>
+              <option value="9:16" ${form.aspect === "9:16" ? "selected" : ""}>1080p portrait</option>
+              ${form.media === "image" ? `<option value="1:1" ${form.aspect === "1:1" ? "selected" : ""}>1080 square</option>` : ""}
             </select>
           </div>
           ${form.media === "video" ? `
             <div>
               <label for="seconds">Length</label>
               <select id="seconds">
-                <option value="5" ${Number(form.seconds) === 5 ? "selected" : ""}>5 seconds</option>
-                <option value="3" ${Number(form.seconds) === 3 ? "selected" : ""}>3 seconds</option>
-              </select>
-            </div>
-            <div>
-              <label for="pace">Pace</label>
-              <select id="pace">
-                <option value="quick" ${form.pace === "quick" ? "selected" : ""}>Quick</option>
-                <option value="standard" ${form.pace === "standard" ? "selected" : ""}>Standard</option>
-                <option value="fine" ${form.pace === "fine" ? "selected" : ""}>Fine</option>
+                <option value="10" ${Number(form.seconds) !== 15 ? "selected" : ""}>10 seconds</option>
+                <option value="15" ${Number(form.seconds) === 15 ? "selected" : ""}>15 seconds</option>
               </select>
             </div>` : ""}
         </div>
@@ -424,7 +415,6 @@ function readGenerateForm() {
   form.characterId = document.querySelector("#character")?.value || "";
   form.aspect = document.querySelector("#aspect")?.value || "16:9";
   form.seconds = Number(document.querySelector("#seconds")?.value || form.seconds);
-  form.pace = document.querySelector("#pace")?.value || form.pace;
   form.seed = document.querySelector("#seed")?.value || "";
 }
 
